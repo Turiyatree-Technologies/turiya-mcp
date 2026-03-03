@@ -2,6 +2,8 @@ import sys
 import os
 from fastmcp import FastMCP
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 
 # PATH FIX
 current_file = os.path.abspath(__file__)
@@ -16,21 +18,25 @@ from src.tools.jobs import get_public_jobs
 mcp = FastMCP("TuriyaRecruitment")
 mcp.add_tool(get_public_jobs)
 
-# Get MCP ASGI app
 mcp_app = mcp.http_app()
 
-# ✅ Pass mcp_app.lifespan to FastAPI
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with mcp_app.router.lifespan_context(app):
+        yield
+
 app = FastAPI(title="Turiya MCP Server", lifespan=mcp_app.lifespan)
 
 @app.get("/health")
 def health():
     return {"status": "ok", "server": "TuriyaRecruitment"}
 
-# Mount MCP app
-app.mount("/mcp", mcp_app)
+# Mount at ROOT → /mcp endpoint exposed correctly
+app.mount("/", mcp_app)
 
 if __name__ == "__main__":
     print("Run with: uvicorn src.main:app --host 0.0.0.0 --port 8002")
+
 
 # import sys
 # import os
