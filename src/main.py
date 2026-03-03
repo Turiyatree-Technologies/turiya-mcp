@@ -1,7 +1,8 @@
 import sys
 import os
 from fastmcp import FastMCP
-
+import uvicorn
+from fastapi import FastAPI
 
 # --- PATH FIX: Allow imports from project root ---
 # (Keep this block, it is safe and helpful)
@@ -24,20 +25,36 @@ mcp = FastMCP("TuriyaRecruitment")
 # Add Tools
 mcp.add_tool(get_public_jobs)
 
+# Replace the entire if __name__ block in src/main.py
+
+if __name__ == "__main__":
+    app = FastAPI(title="Turiya MCP Server")
+    app.mount("/mcp", mcp.http_app())  # MCP protocol at /mcp
+    
+    uvicorn.run(
+        "src.main:app",
+        host="0.0.0.0",
+        port=8002,
+        ssl_keyfile="/etc/ssl/certs/STAR.turiyaskills.co/STAR.turiyaskills.co.key",
+        ssl_certfile="/etc/ssl/certs/STAR.turiyaskills.co/STAR.turiyaskills.co.crt",
+        log_level="info",
+        reload=False
+    )
+
 
 # --- PRODUCTION HTTP SERVER FOR AWS ---
 # Runs HTTPS on port 8002, accessible remotely
 # MCP endpoint available at /mcp (SSE, tools, calls)
-if __name__ == "__main__":
-    mcp.run(
-        transport="http",
-        host="0.0.0.0",  # Bind to all interfaces (required for AWS)
-        port=8002,       # Your chosen port
+# if __name__ == "__main__":
+#     mcp.run(
+#         transport="http",
+#         host="0.0.0.0",  # Bind to all interfaces (required for AWS)
+#         port=8002,       # Your chosen port
         
-        # SSL/TLS for production (matches your certs)
-        ssl_certfile="/etc/ssl/certs/STAR.turiyaskills.co/STAR.turiyaskills.co.crt",
-        ssl_keyfile="/etc/ssl/certs/STAR.turiyaskills.co/STAR.turiyaskills.co.key"
-    )
+#         # SSL/TLS for production (matches your certs)
+#         ssl_certfile="/etc/ssl/certs/STAR.turiyaskills.co/STAR.turiyaskills.co.crt",
+#         ssl_keyfile="/etc/ssl/certs/STAR.turiyaskills.co/STAR.turiyaskills.co.key"
+#     )
 
 # import sys
 # import os
