@@ -1,0 +1,19 @@
+[project]
+name = "turiya-mcp"
+version = "0.1.0"
+description = "Collection of Turiya MCP Servers"
+authors = [
+    {name = "Sidharth-T3",email = "sidharth@turiyatree.com"}
+]
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "fastmcp (>=3.1.0,<4.0.0)",
+    "uvicorn[standard] (>=0.41.0,<0.42.0)",
+    "requests (>=2.32.5,<3.0.0)",
+    "python-dotenv (>=1.2.2,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
