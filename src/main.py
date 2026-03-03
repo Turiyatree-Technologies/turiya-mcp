@@ -1,7 +1,9 @@
 import sys
 import os
 from fastmcp import FastMCP
-from fastapi import FastAPI
+from starlette.routing import Mount, Route
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
 
 # PATH FIX
 current_file = os.path.abspath(__file__)
@@ -16,19 +18,50 @@ from src.tools.jobs import get_public_jobs
 mcp = FastMCP("TuriyaRecruitment")
 mcp.add_tool(get_public_jobs)
 
-# FastAPI app
-app = FastAPI(title="Turiya MCP Server")
+# Health endpoint
+async def health(request):
+    return JSONResponse({"status": "ok", "server": "TuriyaRecruitment"})
 
-# Health check (optional but useful)
-@app.get("/health")
-def health():
-    return {"status": "ok", "server": "TuriyaRecruitment"}
-
-# Mount MCP → exposes /mcp/sse and /mcp/messages/
-app.mount("/mcp", mcp.http_app())
+# Build app: health at /health, MCP at root (exposes /sse, /mcp etc)
+app = Starlette(routes=[
+    Route("/health", health),
+    Mount("/", app=mcp.http_app()),
+])
 
 if __name__ == "__main__":
     print("Run with: uvicorn src.main:app --host 0.0.0.0 --port 8002")
+
+# import sys
+# import os
+# from fastmcp import FastMCP
+# from fastapi import FastAPI
+
+# # PATH FIX
+# current_file = os.path.abspath(__file__)
+# src_dir = os.path.dirname(current_file)
+# project_root = os.path.dirname(src_dir)
+# if project_root not in sys.path:
+#     sys.path.insert(0, project_root)
+
+# from src.tools.jobs import get_public_jobs
+
+# # MCP Server
+# mcp = FastMCP("TuriyaRecruitment")
+# mcp.add_tool(get_public_jobs)
+
+# # FastAPI app
+# app = FastAPI(title="Turiya MCP Server")
+
+# # Health check (optional but useful)
+# @app.get("/health")
+# def health():
+#     return {"status": "ok", "server": "TuriyaRecruitment"}
+
+# # Mount MCP → exposes /mcp/sse and /mcp/messages/
+# app.mount("/mcp", mcp.http_app())
+
+# if __name__ == "__main__":
+#     print("Run with: uvicorn src.main:app --host 0.0.0.0 --port 8002")
 
 # import sys
 # import os
