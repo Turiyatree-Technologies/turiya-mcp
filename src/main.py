@@ -14,12 +14,13 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 
-from src.tools.jobs import get_public_jobs
+from src.tools.jobs import get_public_jobs, get_job_apply_link
 
 
 # MCP Server
 mcp = FastMCP("TuriyaRecruitment")
 mcp.add_tool(get_public_jobs)
+mcp.add_tool(get_job_apply_link)
 mcp_app = mcp.http_app()
 
 
