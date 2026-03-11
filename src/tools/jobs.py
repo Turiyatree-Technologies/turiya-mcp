@@ -77,7 +77,7 @@ def to_url_slug(text: str) -> str:
 
 def get_job_apply_link(job_id: str, company_name: str) -> str:
     """
-    Fetches the application link for a specific job ID.
+    Fetches the application link for a specific job ID, when given the company name.
     """
     company_slug = to_url_slug(company_name)
     return f"app.turiyaskills.co/jobs/{company_slug}/{job_id}"
