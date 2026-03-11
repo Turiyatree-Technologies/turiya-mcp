@@ -31,6 +31,18 @@ app = FastAPI(title="Turiya MCP Server", lifespan=mcp_app.lifespan)
 def health():
     return {"status": "ok", "server": "TuriyaRecruitment"}
 
+@app.middleware("http")
+async def fix_accept_header(request, call_next):
+    if request.url.path == "/mcp" and request.method == "POST":
+        accept = request.headers.get("accept", "")
+        if "text/event-stream" not in accept or "application/json" not in accept:
+            # Add both if missing either
+            request.scope["headers"] = [
+                (k.lower().encode(), v.encode()) for k, v in request.headers.items()
+            ] + [("accept", "application/json,text/event-stream")]
+    response = await call_next(request)
+    return response
+
 # Mount at ROOT → /mcp endpoint exposed correctly
 app.mount("/", mcp_app)
 
