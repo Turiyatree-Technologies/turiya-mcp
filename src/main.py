@@ -1,9 +1,10 @@
 import sys
 import os
-from fastmcp import FastMCP
-from fastapi import FastAPI, Request
+import json
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastmcp import FastMCP
 
 
 # PATH FIX
@@ -14,55 +15,50 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 
-from src.tools.jobs import get_public_jobs, get_job_apply_link
+from src.tools.jobs import get_public_jobs
 
 
 # MCP Server
 mcp = FastMCP("TuriyaRecruitment")
 mcp.add_tool(get_public_jobs)
-mcp.add_tool(get_job_apply_link)
-mcp_app = mcp.http_app()
-
-
-class AcceptFixMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        if request.url.path == "/mcp" and request.method == "POST":
-            # Fix Accept header
-            headers = [(k.lower().encode(), v.encode()) for k, v in request.headers.items()]
-            headers = [(k, v) for k, v in headers if k.decode().lower() != 'accept']
-            headers.append((b'accept', b'application/json,text/event-stream'))
-            
-            # Add session ID if missing
-            session_id = request.headers.get("mcp-session-id")
-            if not session_id:
-                headers.append((b'mcp-session-id', b'curl-test-session'))
-            
-            request.scope['headers'] = headers
-            print(f"[DEBUG] Fixed headers for {request.client}")
-        
-        return await call_next(request)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with mcp_app.router.lifespan_context(app):
-        yield
+    await mcp.initialize()
+    yield
+    await mcp.shutdown()
 
 
-app = FastAPI(title="Turiya MCP Server", lifespan=mcp_app.lifespan)
-app.add_middleware(AcceptFixMiddleware)
+app = FastAPI(title="Turiya MCP Server", lifespan=lifespan)
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+async def health():
+    return {"status": "ok", "tools": [tool.name for tool in mcp.tools]}
 
 
-app.mount("/", mcp_app)  # ← This works with middleware!
+@app.post("/mcp")
+async def mcp_endpoint(request: Request):
+    """Production MCP endpoint for fastmcp 3.x"""
+    body = await request.body()
+    
+    try:
+        messages = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Invalid JSON")
+    
+    # fastmcp 3.x correct API
+    async def event_stream():
+        async for event in mcp.run_stream(messages):  # Core streaming API
+            yield f"data: {json.dumps(event)}\n\n"
+    
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 if __name__ == "__main__":
     print("uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload")
+
 
 # import sys
 # import os
