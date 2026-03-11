@@ -2,52 +2,89 @@ import sys
 import os
 from fastapi import FastAPI
 from fastmcp import FastMCP
-from fastmcp.utilities.lifespan import combine_lifespans
-from contextlib import asynccontextmanager
 
 
-# PATH FIX
 current_file = os.path.abspath(__file__)
 src_dir = os.path.dirname(current_file)
 project_root = os.path.dirname(src_dir)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from src.tools.jobs import get_public_jobs, get_job_apply_link
 
-from src.tools.jobs import get_public_jobs
 
-
-# MCP Server
-mcp = FastMCP("TuriyaRecruitment")
+mcp = FastMCP("TuriyaRecruitment", stateless_http=True)
 mcp.add_tool(get_public_jobs)
+mcp.add_tool(get_job_apply_link)
 
-mcp_app = mcp.http_app(path="/")  # exposes at /mcp
+# path="/" since we mount at /mcp
+mcp_app = mcp.http_app(path="/")
 
+# Pass mcp_app.lifespan directly (official pattern)
+app = FastAPI(title="Turiya MCP Server", lifespan=mcp_app.lifespan)
 
-@asynccontextmanager
-async def app_lifespan(app: FastAPI):
-    print("Turiya MCP Server starting...")
-    yield
-    print("Turiya MCP Server shutting down...")
-
-
-# Official fastmcp + FastAPI integration pattern
-app = FastAPI(
-    title="Turiya MCP Server",
-    lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan)  # ← KEY FIX
-)
-
-app.mount("/mcp", mcp_app)  # MCP at /mcp
-
-
+# Health check using fastmcp's custom_route pattern
 @app.get("/health")
 async def health():
     return {"status": "ok", "server": "TuriyaRecruitment"}
 
+# Mount at /mcp → endpoint at /mcp/
+app.mount("/mcp", mcp_app)
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("src.main:app", host="0.0.0.0", port=8002, reload=True)
+
+# import sys
+# import os
+# from fastapi import FastAPI
+# from fastmcp import FastMCP
+# from fastmcp.utilities.lifespan import combine_lifespans
+# from contextlib import asynccontextmanager
+
+
+# # PATH FIX
+# current_file = os.path.abspath(__file__)
+# src_dir = os.path.dirname(current_file)
+# project_root = os.path.dirname(src_dir)
+# if project_root not in sys.path:
+#     sys.path.insert(0, project_root)
+
+
+# from src.tools.jobs import get_public_jobs
+
+
+# # MCP Server
+# mcp = FastMCP("TuriyaRecruitment")
+# mcp.add_tool(get_public_jobs)
+
+# mcp_app = mcp.http_app(path="/")  # exposes at /mcp
+
+
+# @asynccontextmanager
+# async def app_lifespan(app: FastAPI):
+#     print("Turiya MCP Server starting...")
+#     yield
+#     print("Turiya MCP Server shutting down...")
+
+
+# # Official fastmcp + FastAPI integration pattern
+# app = FastAPI(
+#     title="Turiya MCP Server",
+#     lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan)  # ← KEY FIX
+# )
+
+# app.mount("/mcp", mcp_app)  # MCP at /mcp
+
+
+# @app.get("/health")
+# async def health():
+#     return {"status": "ok", "server": "TuriyaRecruitment"}
+
+
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run("src.main:app", host="0.0.0.0", port=8002, reload=True)
 
 
 
