@@ -1,12 +1,10 @@
 import sys
 import os
-from fastmcp import FastMCP
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+import json
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse, JSONResponse
 from contextlib import asynccontextmanager
-from starlette.middleware.base import BaseHTTPMiddleware
-import typing
-from fastapi import Request
+from fastmcp import FastMCP
 
 # PATH FIX
 current_file = os.path.abspath(__file__)
@@ -21,43 +19,111 @@ from src.tools.jobs import get_public_jobs
 mcp = FastMCP("TuriyaRecruitment")
 mcp.add_tool(get_public_jobs)
 
-mcp_app = mcp.http_app()
-
-class AcceptFixMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        if request.url.path == "/mcp" and request.method == "POST":
-            accept = request.headers.get("accept", "").lower()
-            if "text/event-stream" not in accept or "application/json" not in accept:
-                # Force both Accept types
-                request.scope["headers"] = [
-                    (k.lower().encode(), v.encode()) for k, v in request.headers.items()
-                ]
-                # Add/replace Accept header with both
-                headers_list = [(b"accept", b"application/json,text/event-stream")]
-                for k, v in typing.cast(list, request.scope["headers"]):
-                    if k.decode().lower() != "accept":
-                        headers_list.append((k, v))
-                request.scope["headers"] = headers_list
-        return await call_next(request)
+mcp_app = mcp.http_app()  # Still create for lifespan/tools
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with mcp_app.router.lifespan_context(app):
         yield
 
-app = FastAPI(title="Turiya MCP Server", lifespan=mcp_app.lifespan)
-app.add_middleware(AcceptFixMiddleware)
+app = FastAPI(title="Turiya MCP Server", lifespan=lifespan)
 
 @app.get("/health")
 def health():
     return {"status": "ok", "server": "TuriyaRecruitment"}
 
-
-# Mount at ROOT → /mcp endpoint exposed correctly
-app.mount("/", mcp_app)
+@app.post("/mcp")
+async def mcp_handler(request: Request):
+    """Universal MCP endpoint - works with OpenAI + Claude"""
+    try:
+        body = await request.body()
+        msg = json.loads(body)
+    except Exception:
+        return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}, status_code=400)
+    
+    try:
+        # Forward to fastmcp (handles initialize, tools/list, tools/call)
+        result = await mcp.handle_request(msg)
+        
+        # Stream SSE format
+        async def sse_stream():
+            async for chunk in result:
+                yield f"data: {json.dumps(chunk)}\n\n"
+        
+        return StreamingResponse(sse_stream(), media_type="text/event-stream")
+    except Exception as e:
+        error_response = {
+            "jsonrpc": "2.0",
+            "id": msg.get("id"),
+            "error": {"code": -32603, "message": str(e)}
+        }
+        async def error_stream():
+            yield f"data: {json.dumps(error_response)}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
 
 if __name__ == "__main__":
-    print("Run with: uvicorn src.main:app --host 0.0.0.0 --port 8002")
+    print("🚀 Turiya MCP Server - Run with: uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload")
+
+# import sys
+# import os
+# from fastmcp import FastMCP
+# from fastapi import FastAPI
+# from fastapi.responses import JSONResponse
+# from contextlib import asynccontextmanager
+# from starlette.middleware.base import BaseHTTPMiddleware
+# import typing
+# from fastapi import Request
+
+# # PATH FIX
+# current_file = os.path.abspath(__file__)
+# src_dir = os.path.dirname(current_file)
+# project_root = os.path.dirname(src_dir)
+# if project_root not in sys.path:
+#     sys.path.insert(0, project_root)
+
+# from src.tools.jobs import get_public_jobs
+
+# # MCP Server
+# mcp = FastMCP("TuriyaRecruitment")
+# mcp.add_tool(get_public_jobs)
+
+# mcp_app = mcp.http_app()
+
+# class AcceptFixMiddleware(BaseHTTPMiddleware):
+#     async def dispatch(self, request: Request, call_next):
+#         if request.url.path == "/mcp" and request.method == "POST":
+#             accept = request.headers.get("accept", "").lower()
+#             if "text/event-stream" not in accept or "application/json" not in accept:
+#                 # Force both Accept types
+#                 request.scope["headers"] = [
+#                     (k.lower().encode(), v.encode()) for k, v in request.headers.items()
+#                 ]
+#                 # Add/replace Accept header with both
+#                 headers_list = [(b"accept", b"application/json,text/event-stream")]
+#                 for k, v in typing.cast(list, request.scope["headers"]):
+#                     if k.decode().lower() != "accept":
+#                         headers_list.append((k, v))
+#                 request.scope["headers"] = headers_list
+#         return await call_next(request)
+
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     async with mcp_app.router.lifespan_context(app):
+#         yield
+
+# app = FastAPI(title="Turiya MCP Server", lifespan=mcp_app.lifespan)
+# app.add_middleware(AcceptFixMiddleware)
+
+# @app.get("/health")
+# def health():
+#     return {"status": "ok", "server": "TuriyaRecruitment"}
+
+
+# # Mount at ROOT → /mcp endpoint exposed correctly
+# app.mount("/", mcp_app)
+
+# if __name__ == "__main__":
+#     print("Run with: uvicorn src.main:app --host 0.0.0.0 --port 8002")
 
 
 # import sys
