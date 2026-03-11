@@ -1,9 +1,9 @@
 import sys
 import os
-import json
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI
 from fastmcp import FastMCP
+from fastmcp.utilities.lifespan import combine_lifespans
+from contextlib import asynccontextmanager
 
 
 # PATH FIX
@@ -17,36 +17,38 @@ if project_root not in sys.path:
 from src.tools.jobs import get_public_jobs
 
 
+# MCP Server
 mcp = FastMCP("TuriyaRecruitment")
 mcp.add_tool(get_public_jobs)
 
-# Use mcp.lifespan directly - NO custom lifespan needed
-app = FastAPI(title="Turiya MCP Server", lifespan=mcp.lifespan)
+mcp_app = mcp.http_app(path="/")  # exposes at /mcp
+
+
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    print("Turiya MCP Server starting...")
+    yield
+    print("Turiya MCP Server shutting down...")
+
+
+# Official fastmcp + FastAPI integration pattern
+app = FastAPI(
+    title="Turiya MCP Server",
+    lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan)  # ← KEY FIX
+)
+
+app.mount("/mcp", mcp_app)  # MCP at /mcp
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
-
-
-@app.post("/mcp")
-async def mcp_endpoint(request: Request):
-    body = await request.body()
-    try:
-        messages = json.loads(body)
-    except json.JSONDecodeError:
-        raise HTTPException(400, "Invalid JSON")
-    
-    async def stream():
-        async for event in mcp.run_stream(messages):
-            yield f"data: {json.dumps(event)}\n\n"
-    
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return {"status": "ok", "server": "TuriyaRecruitment"}
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("src.main:app", host="0.0.0.0", port=8002, reload=True)
+
 
 
 # import sys
