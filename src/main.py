@@ -4,6 +4,9 @@ from fastmcp import FastMCP
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+from starlette.middleware.base import BaseHTTPMiddleware
+import typing
+from fastapi import Request
 
 # PATH FIX
 current_file = os.path.abspath(__file__)
@@ -20,28 +23,35 @@ mcp.add_tool(get_public_jobs)
 
 mcp_app = mcp.http_app()
 
+class AcceptFixMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/mcp" and request.method == "POST":
+            accept = request.headers.get("accept", "").lower()
+            if "text/event-stream" not in accept or "application/json" not in accept:
+                # Force both Accept types
+                request.scope["headers"] = [
+                    (k.lower().encode(), v.encode()) for k, v in request.headers.items()
+                ]
+                # Add/replace Accept header with both
+                headers_list = [(b"accept", b"application/json,text/event-stream")]
+                for k, v in typing.cast(list, request.scope["headers"]):
+                    if k.decode().lower() != "accept":
+                        headers_list.append((k, v))
+                request.scope["headers"] = headers_list
+        return await call_next(request)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with mcp_app.router.lifespan_context(app):
         yield
 
 app = FastAPI(title="Turiya MCP Server", lifespan=mcp_app.lifespan)
+app.add_middleware(AcceptFixMiddleware)
 
 @app.get("/health")
 def health():
     return {"status": "ok", "server": "TuriyaRecruitment"}
 
-@app.middleware("http")
-async def fix_accept_header(request, call_next):
-    if request.url.path == "/mcp" and request.method == "POST":
-        accept = request.headers.get("accept", "")
-        if "text/event-stream" not in accept or "application/json" not in accept:
-            # Add both if missing either
-            request.scope["headers"] = [
-                (k.lower().encode(), v.encode()) for k, v in request.headers.items()
-            ] + [("accept", "application/json,text/event-stream")]
-    response = await call_next(request)
-    return response
 
 # Mount at ROOT → /mcp endpoint exposed correctly
 app.mount("/", mcp_app)
