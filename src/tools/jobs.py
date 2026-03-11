@@ -2,6 +2,7 @@ import requests
 import json
 # I recommend using the config variables, but if you want to hardcode for testing, that's fine.
 from src.config import FRAPPE_URL, API_KEY 
+import re
 
 def get_public_jobs(job_title: str = None) -> str:
     """
@@ -65,6 +66,22 @@ def get_public_jobs(job_title: str = None) -> str:
 
     except Exception as e:
         return f"Error connecting to Recruitment Service: {str(e)}"
+    
+def to_url_slug(text: str) -> str:
+    text = text.lower().strip()
+    text = re.sub(r"[^a-z0-9\s-]", "", text)      # remove non-alnum/space/hyphen [web:3]
+    text = re.sub(r"[\s_]+", "-", text)           # spaces/underscores -> hyphen [web:3]
+    text = re.sub(r"-+", "-", text)               # collapse multiple hyphens [web:3]
+    text = re.sub(r"^-|-$", "", text)             # trim leading/trailing hyphen [web:3]
+    return text
+
+def get_job_apply_link(job_id: str, company_name: str) -> str:
+    """
+    Fetches the application link for a specific job ID.
+    """
+    company_slug = to_url_slug(company_name)
+    return f"app.turiyaskills.co/jobs/{company_slug}/{job_id}"
+
 
 if __name__ == "__main__":
     print(get_public_jobs())
