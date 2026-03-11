@@ -2,10 +2,8 @@ import sys
 import os
 from fastmcp import FastMCP
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from starlette.middleware.base import BaseHTTPMiddleware
-import typing
 
 
 # PATH FIX
@@ -22,28 +20,26 @@ from src.tools.jobs import get_public_jobs
 # MCP Server
 mcp = FastMCP("TuriyaRecruitment")
 mcp.add_tool(get_public_jobs)
-
-
 mcp_app = mcp.http_app()
 
 
 class AcceptFixMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.url.path == "/mcp" and request.method == "POST":
-            accept = request.headers.get("accept", "").lower()
-            print(f"[MCP DEBUG] Original Accept: '{accept}'")  # Debug
-            
-            # Fix headers - ensure BOTH types
+            # Fix Accept header
             headers = [(k.lower().encode(), v.encode()) for k, v in request.headers.items()]
-            headers = [(k, v) for k, v in headers if k.decode('utf-8').lower() != 'accept']
+            headers = [(k, v) for k, v in headers if k.decode().lower() != 'accept']
             headers.append((b'accept', b'application/json,text/event-stream'))
-            request.scope['headers'] = headers
             
-            new_accept = dict((k.decode(), v.decode()) for k, v in headers).get('accept', '')
-            print(f"[MCP DEBUG] Fixed Accept: '{new_accept}'")
+            # Add session ID if missing
+            session_id = request.headers.get("mcp-session-id")
+            if not session_id:
+                headers.append((b'mcp-session-id', b'curl-test-session'))
+            
+            request.scope['headers'] = headers
+            print(f"[DEBUG] Fixed headers for {request.client}")
         
-        response = await call_next(request)
-        return response
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -58,15 +54,14 @@ app.add_middleware(AcceptFixMiddleware)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "server": "TuriyaRecruitment"}
+    return {"status": "ok"}
 
 
-# THIS IS CORRECT - mount exposes /mcp endpoint
-app.mount("/", mcp_app)
+app.mount("/", mcp_app)  # ← This works with middleware!
 
 
 if __name__ == "__main__":
-    print("🚀 Turiya MCP Server - Run with: uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload")
+    print("uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload")
 
 # import sys
 # import os
